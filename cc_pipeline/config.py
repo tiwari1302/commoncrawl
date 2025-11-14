@@ -18,3 +18,7 @@ class Config:
 
     s3_read_retries: int = 2
     s3_read_retry_backoff: float = 2.0
+    
+    # Range-read fallback flag: if True, attempt S3 Range GET; if gzip boundaries prevent useful reads,
+    # set to False to always stream and skip to offsets sequentially.
+    use_range_reads: bool = True

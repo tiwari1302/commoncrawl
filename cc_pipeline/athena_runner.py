@@ -62,7 +62,8 @@ class AthenaRunner:
             time.sleep(self.cfg.athena_poll_interval)
         return info
 
-    def fetch_query_results(self, query_execution_id: str) -> 'pandas.DataFrame':
+    def fetch_query_results(self, query_execution_id: str):
+        """Return pandas DataFrame of results (using get_query_results pagination)."""
         import pandas as pd
         paginator = self.client.get_paginator("get_query_results")
         rows = []

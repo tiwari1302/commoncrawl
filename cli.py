@@ -10,12 +10,13 @@ logger = logging.getLogger("cc_cli")
 
 
 def main():
-    p = argparse.ArgumentParser(description="Run Common Crawl Athena->WAT extraction pipeline")
-    p.add_argument("--query-file", help="Path to SQL file to run (required)", required=True)
-    p.add_argument("--local-out", help="Local output dir", default="./outputs")
-    p.add_argument("--s3-out", help="S3 output dir for extracted parquet (optional)")
-    p.add_argument("--athena-out", help="Athena output s3 location (optional)")
+    p = argparse.ArgumentParser(description="Run offset-guided Common Crawl extraction pipeline")
+    p.add_argument("--query-file", required=True, help="SQL file that returns url, warc_filename, offset, length, wat_s3_url ordered by warc_filename,offset")
+    p.add_argument("--local-out", default="./outputs")
+    p.add_argument("--s3-out", default=None)
+    p.add_argument("--athena-out", default=None)
     p.add_argument("--max-workers", type=int, default=8)
+    p.add_argument("--no-range-reads", action="store_true", help="Disable S3 Range GETs and always stream WAT files")
     args = p.parse_args()
 
     with open(args.query_file, "r") as fh:
@@ -26,6 +27,7 @@ def main():
         s3_output_dir=args.s3_out,
         athena_output_s3=args.athena_out,
         max_workers=args.max_workers,
+        use_range_reads=(not args.no_range_reads),
     )
 
     pipeline = Pipeline(cfg)
