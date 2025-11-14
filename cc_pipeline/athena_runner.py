@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Optional
 from botocore.exceptions import ClientError
 import boto3
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +15,24 @@ class AthenaRunner:
 
     def ensure_custom_workgroup(self) -> str:
         if not self.cfg.athena_output_s3:
-            return self.cfg.athena_workgroup
+            return self.cfg.athena_workgroup       
         wg = self.cfg.athena_custom_workgroup_name
+
+           # Check if the workgroup already exists
+        try:
+            logger.info("Checking if workgroup %s exists", wg)
+            existing_workgroups = self.client.list_work_groups()
+            workgroup_names = [wg["Name"] for wg in existing_workgroups["WorkGroups"]]
+            
+            if wg in workgroup_names:
+                logger.debug("Workgroup %s already exists, no need to create it", wg)
+                return wg
+          
+        except ClientError as e:
+            logger.exception("Failed to list workgroups: %s", e)
+            raise
+
+
         try:
             logger.info("Creating or ensuring workgroup %s", wg)
             self.client.create_work_group(
@@ -35,15 +52,19 @@ class AthenaRunner:
             else:
                 logger.exception("Failed to create workgroup: %s", e)
                 raise
+            # logger.exception("Failed to create workgroup: %s", e)
+            # raise  # Re-raise the exception to handle it outside
         return wg
 
     def run_query(self, query: str, use_custom_output: bool = False) -> Dict:
+    
         workgroup = self.cfg.athena_workgroup
         params = {
             "QueryString": query,
             "QueryExecutionContext": {"Database": self.cfg.athena_database},
             "WorkGroup": workgroup,
-        }
+        }   
+      
         if use_custom_output and self.cfg.athena_output_s3:
             wg = self.ensure_custom_workgroup()
             params["WorkGroup"] = wg
@@ -52,18 +73,21 @@ class AthenaRunner:
         resp = self.client.start_query_execution(**params)
         qid = resp["QueryExecutionId"]
         logger.info("Started query %s", qid)
-
-        while True:
+        while True: 
+            
             info = self.client.get_query_execution(QueryExecutionId=qid)
+           
             state = info["QueryExecution"]["Status"]["State"]
+            if state == "FAILED":
+                reason = info["QueryExecution"]["Status"].get("StateChangeReason", "Unknown")
+                logger.error("Query %s failed: %s", qid, reason)
             if state in ("SUCCEEDED", "FAILED", "CANCELLED"):
                 logger.info("Query %s finished with state %s", qid, state)
                 break
             time.sleep(self.cfg.athena_poll_interval)
         return info
 
-    def fetch_query_results(self, query_execution_id: str) -> 'pandas.DataFrame':
-        import pandas as pd
+    def fetch_query_results(self, query_execution_id: str) -> 'pd.DataFrame':
         paginator = self.client.get_paginator("get_query_results")
         rows = []
         columns = None
